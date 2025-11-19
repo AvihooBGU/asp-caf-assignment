@@ -160,6 +160,31 @@ def branch(**kwargs) -> int:
     return 0
 
 
+def tags(**kwargs) -> int:
+    repo = _repo_from_cli_kwargs(kwargs)
+    try:
+        tag_names = repo.tags()
+
+        if not tag_names:
+            _print_success('No tags found.')
+            return 0
+
+        _print_success('Tags:')
+
+        for tag in tag_names:
+            commit_ref = repo.tag_commit(tag)
+            commit_str = commit_ref if commit_ref is not None else '<unresolved>'
+            print(f'{tag}: {commit_str}')
+    except RepositoryNotFoundError:
+        _print_error(f'No repository found at {repo.repo_path()}')
+        return -1
+    except RepositoryError as e:
+        _print_error(f'Repository error: {e}')
+        return -1
+
+    return 0
+
+
 def commit(**kwargs) -> int:
     repo = _repo_from_cli_kwargs(kwargs)
     author = kwargs.get('author')
@@ -215,6 +240,50 @@ def log(**kwargs) -> int:
         return -1
     except RepositoryError as re:
         _print_error(f'Repository error: {re}')
+        return -1
+
+
+def create_tag(**kwargs) -> int:
+    repo = _repo_from_cli_kwargs(kwargs)
+    tag_name = kwargs.get('tag_name')
+    commit_ref = kwargs.get('commit')
+
+    if not tag_name:
+        _print_error('Tag name is required.')
+        return -1
+    if not commit_ref:
+        _print_error('Commit reference is required.')
+        return -1
+
+    try:
+        resolved = repo.add_tag(tag_name, commit_ref)
+        _print_success(f'Tag "{tag_name}" -> {resolved}')
+        return 0
+    except RepositoryNotFoundError:
+        _print_error(f'No repository found at {repo.repo_path()}')
+        return -1
+    except RepositoryError as e:
+        _print_error(f'Repository error: {e}')
+        return -1
+
+
+def delete_tag(**kwargs) -> int:
+    repo = _repo_from_cli_kwargs(kwargs)
+    tag_name = kwargs.get('tag_name')
+
+    if not tag_name:
+        _print_error('Tag name is required.')
+        return -1
+
+    try:
+        repo.delete_tag(tag_name)
+        _print_success(f'Tag "{tag_name}" deleted.')
+        return 0
+    except RepositoryNotFoundError:
+        _print_error(f'No repository found at {repo.repo_path()}')
+        return -1
+    except RepositoryError as e:
+        _print_error(f'Repository error: {e}')
         return -1
 
 

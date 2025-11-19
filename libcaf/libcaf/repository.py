@@ -11,7 +11,7 @@ from typing import Concatenate
 
 from . import Blob, Commit, Tree, TreeRecord, TreeRecordType
 from .constants import (DEFAULT_BRANCH, DEFAULT_REPO_DIR, HASH_CHARSET, HASH_LENGTH, HEADS_DIR, HEAD_FILE,
-                        OBJECTS_SUBDIR, REFS_DIR)
+                        OBJECTS_SUBDIR, REFS_DIR, TAGS_DIR)
 from .plumbing import hash_object, load_commit, load_tree, save_commit, save_file_content, save_tree
 from .ref import HashRef, Ref, RefError, SymRef, read_ref, write_ref
 
@@ -99,6 +99,9 @@ class Repository:
         heads_dir = self.heads_dir()
         heads_dir.mkdir(parents=True)
 
+        tags_dir = self.tags_dir()
+        tags_dir.mkdir(parents=True)
+
         self.add_branch(default_branch)
 
         write_ref(self.head_file(), branch_ref(default_branch))
@@ -132,6 +135,12 @@ class Repository:
 
         :return: The path to the heads directory."""
         return self.refs_dir() / HEADS_DIR
+
+    def tags_dir(self) -> Path:
+        """Get the path to the tags directory within the repository.
+
+        :return: The path to the tags directory."""
+        return self.refs_dir() / TAGS_DIR
 
     @staticmethod
     def requires_repo[**P, R](func: Callable[Concatenate['Repository', P], R]) -> \
@@ -250,6 +259,84 @@ class Repository:
 
         :raises RepositoryNotFoundError: If the repository does not exist."""
         shutil.rmtree(self.repo_path())
+
+    def _ensure_tags_dir(self) -> Path:
+        tags_dir = self.tags_dir()
+        tags_dir.mkdir(parents=True, exist_ok=True)
+        return tags_dir
+
+    @requires_repo
+    def add_tag(self, tag: str, target: Ref | str) -> HashRef:
+        """Create a tag pointing to the given target commit."""
+        if not tag:
+            msg = 'Tag name is required'
+            raise ValueError(msg)
+
+        tags_dir = self._ensure_tags_dir()
+        tag_path = tags_dir / tag
+        if tag_path.exists():
+            msg = f'Tag "{tag}" already exists.'
+            raise RepositoryError(msg)
+
+        try:
+            commit_ref = self.resolve_ref(target)
+        except RefError as exc:
+            raise RepositoryError(str(exc)) from exc
+
+        if commit_ref is None:
+            msg = f'Cannot resolve reference {target}'
+            raise RepositoryError(msg)
+
+        write_ref(tag_path, commit_ref)
+        return commit_ref
+
+    @requires_repo
+    def delete_tag(self, tag: str) -> None:
+        """Delete the given tag."""
+        if not tag:
+            msg = 'Tag name is required'
+            raise ValueError(msg)
+
+        tag_path = self.tags_dir() / tag
+        if not tag_path.exists():
+            msg = f'Tag "{tag}" does not exist.'
+            raise RepositoryError(msg)
+
+        tag_path.unlink()
+
+    @requires_repo
+    def tag_exists(self, tag: str) -> bool:
+        """Check if the given tag exists."""
+        if not tag:
+            return False
+        tags_dir = self._ensure_tags_dir()
+        return (tags_dir / tag).exists()
+
+    @requires_repo
+    def tags(self) -> list[str]:
+        """List all tag names in alphabetical order."""
+        tags_dir = self._ensure_tags_dir()
+        return sorted([entry.name for entry in tags_dir.iterdir() if entry.is_file()])
+
+    @requires_repo
+    def tag_commit(self, tag: str) -> HashRef | None:
+        """Return the commit hash a tag points to."""
+        if not tag:
+            msg = 'Tag name is required'
+            raise ValueError(msg)
+
+        tag_path = self.tags_dir() / tag
+
+        if not tag_path.exists():
+            msg = f'Tag "{tag}" does not exist.'
+            raise RepositoryError(msg)
+
+        ref = read_ref(tag_path)
+        if ref is None:
+            return None
+
+        resolved = self.resolve_ref(ref)
+        return resolved
 
     @requires_repo
     def save_file_content(self, file: Path) -> Blob:
@@ -559,3 +646,11 @@ def branch_ref(branch: str) -> SymRef:
     :param branch: The name of the branch.
     :return: A SymRef object representing the branch reference."""
     return SymRef(f'{HEADS_DIR}/{branch}')
+
+
+def tag_ref(tag: str) -> SymRef:
+    """Create a symbolic reference for a tag name.
+
+    :param tag: The name of the tag.
+    :return: A SymRef object representing the tag reference."""
+    return SymRef(f'{TAGS_DIR}/{tag}')

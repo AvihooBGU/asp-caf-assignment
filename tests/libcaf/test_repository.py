@@ -359,3 +359,47 @@ def test_head_commit_with_symbolic_ref_returns_hash_ref(temp_repo: Repository) -
     temp_repo.update_ref('heads/main', commit_ref)
 
     assert temp_repo.head_commit() == commit_ref
+
+
+def test_add_tag_and_list(temp_repo: Repository) -> None:
+    temp_file = temp_repo.working_dir / 'tag_file.txt'
+    temp_file.write_text('tag content')
+    commit_ref = temp_repo.commit_working_dir('Author', 'Tag commit')
+
+    temp_repo.add_tag('v1', commit_ref)
+    temp_repo.add_tag('v2', commit_ref)
+
+    assert temp_repo.tags() == ['v1', 'v2']
+    assert temp_repo.tag_commit('v1') == commit_ref
+
+
+def test_add_tag_invalid_commit_raises_error(temp_repo: Repository) -> None:
+    with raises(RepositoryError):
+        temp_repo.add_tag('broken', 'does-not-exist')
+
+
+def test_add_tag_duplicate_raises_error(temp_repo: Repository) -> None:
+    temp_file = temp_repo.working_dir / 'dup.txt'
+    temp_file.write_text('dup content')
+    commit_ref = temp_repo.commit_working_dir('Author', 'Dup commit')
+
+    temp_repo.add_tag('dup', commit_ref)
+
+    with raises(RepositoryError):
+        temp_repo.add_tag('dup', commit_ref)
+
+
+def test_delete_tag(temp_repo: Repository) -> None:
+    temp_file = temp_repo.working_dir / 'del.txt'
+    temp_file.write_text('delete me')
+    commit_ref = temp_repo.commit_working_dir('Author', 'Delete tag commit')
+
+    temp_repo.add_tag('to-delete', commit_ref)
+    temp_repo.delete_tag('to-delete')
+
+    assert 'to-delete' not in temp_repo.tags()
+
+
+def test_delete_missing_tag_raises_error(temp_repo: Repository) -> None:
+    with raises(RepositoryError):
+        temp_repo.delete_tag('missing')
